@@ -1,165 +1,230 @@
 pico-8 cartridge // http://www.pico-8.com
 version 42
 __lua__
+-- game constant
+local MONSTER_MOVE_COOLDOWN_THRESHOLD = 20
 
-local px = 63
-local py = 112
-local bt = {}
-local btime = 0
-local mtime = 0
-local mtime_max = 20
-local mdir = 0
-local mt = {}
-local mgap = 8
+-- player
+local player_pos_x = 63
+local player_pos_y = 112
 
-local s = 0
-local l = 3
-local go = false
+-- bullets
+local bullet_table = {}
+local bullet_cooldown = 0
+local bullet_threshold = 5
+
+-- monster
+local monster_move_cooldown = 0
+local monster_direction_cooldown = 0
+local monster_table = {}
+
+-- game
+local score = 0
+local lives = 3
+local game_over = false
 
 function _init()
-    r1 = {
-        y = 8,
-        ms = {}
-    }
-    add(mt, r1)
-    add(r1.ms, {x = 16, n = 3})
-    add(r1.ms, {x = 32, n = 2})
-    add(r1.ms, {x = 48, n = 3})
-    add(r1.ms, {x = 64, n = 3})
-    add(r1.ms, {x = 80, n = 3})
-    add(r1.ms, {x = 96, n = 2})
-    add(r1.ms, {x = 112, n = 3})
+  r1 = {
+    y = 8,
+    ms = {}
+  }
+  add(monster_table, r1)
+  add(r1.ms, { x = 16, n = 3 })
+  add(r1.ms, { x = 32, n = 2 })
+  add(r1.ms, { x = 48, n = 3 })
+  add(r1.ms, { x = 64, n = 3 })
+  add(r1.ms, { x = 80, n = 3 })
+  add(r1.ms, { x = 96, n = 2 })
+  add(r1.ms, { x = 112, n = 3 })
 end
 
 function _update()
-    if go then
-        return
-    end 
-    
-  if l <= 0 then
-    go = true
-  end 
+  check_gameover()
 
-  btime = btime + 1
-  ms = max(2, flr(2*(s/10)))
-  mtime = mtime + ms
-  mdir = mdir + 1
+  check_lives()
 
-  if btn(0) and px > 0 then
-    px = px - 1
-  end
+  bullet_cooldown += 1
 
-  if btn(1) and px < 119 then
-    px = px + 1
-  end
-  
-  if btime > 5 and (btn(4) or btn(5)) then
-    add(bt,{x = px+4, y = py})
-    btime = 0
-  end
-  
-  for b in all(bt) do
-    b.y = b.y - 1
-    if b.y < 0 then
-      del(bt, b)
-    end
+  local monster_speed = max(2, flr(2 * (score / 10)))
+  monster_move_cooldown = monster_move_cooldown + monster_speed
+  monster_direction_cooldown = monster_direction_cooldown + 1
 
-    for rs in all(mt) do
-        for m in all (rs.ms) do
+  read_player_input()
 
-            if b.x > m.x and b.x < m.x + 8 and b.y > rs.y and b.y < rs.y + 8 then
-                del(rs.ms, m)
-                del(bt, b)
-                s = s + 1
-            end
-        end 
-    end
-  end
+  check_bullet_monster_collision()
+  check_monster_screen_collision()
 
-  if mtime >= mtime_max then
-    if mdir < 30 then
-        for rs in all(mt) do
-            for m in all (rs.ms) do
-                m.x = m.x + 1
-            end
-            rs.y = rs.y + 1
-        end
-    elseif mdir >= 30 and mdir < 60 then
-        for rs in all(mt) do
-            for m in all (rs.ms) do
-                m.x = m.x - 1
-            end
-            rs.y = rs.y + 1
-        end
-    end
-    mtime = 0
-  end 
+  move_bullets()
 
-  for rs in all(mt) do
-    for m in all (rs.ms) do
-        if rs.y > 119 then
-            l = l - 1
-            del(rs.ms, m)
-        end
-    end
-  end
-  
-  if mdir > 60 then
-    mdir = 0
-  end
+  move_monsters()
 
-  if mt[#mt].y > 24 then
-    add(mt, {y = 8, ms = {}})
-    add(mt[#mt].ms, {x = 16, n = flr(rnd(3))+2})
-    add(mt[#mt].ms, {x = 32, n = flr(rnd(3))+2})
-    add(mt[#mt].ms, {x = 48, n = flr(rnd(3))+2})
-    add(mt[#mt].ms, {x = 64, n = flr(rnd(3))+2})
-    add(mt[#mt].ms, {x = 80, n = flr(rnd(3))+2})
-    add(mt[#mt].ms, {x = 96, n = flr(rnd(3))+2})
-    add(mt[#mt].ms, {x = 112, n = flr(rnd(3))+2})
-  end 
+  reset_monster_move_timer()
 
+  procedurally_add_monsters()
 end
 
 function _draw()
-  if go then
+  if game_over then
     cls()
     print("game over", 1, 1)
-    print("score: " .. s, 1, 8)
-    if btn(4) or btn(5) then
-      go = false
-      l = 3
-      bt = {}
-      mt = {}
-      add(mt, {y = 8, ms = {}})
-      add(mt[#mt].ms, {x = 16, n = 3})
-      add(mt[#mt].ms, {x = 32, n = 2})
-      add(mt[#mt].ms, {x = 48, n = 3})
-      add(mt[#mt].ms, {x = 64, n = 3})
-      add(mt[#mt].ms, {x = 80, n = 3})
-      add(mt[#mt].ms, {x = 96, n = 2})
-
-      s = 0
-      mtime = 0
-      mdir = 0
-      btime = 0
-    end
-  else 
+    print("score: " .. score, 1, 8)
+    restart_game()
+  else
     cls()
-    print("score: " .. s, 1, 1)
-    print("lives: " .. l, 1, 8)
-    for i = 0, 1 do
-        spr(1, px, py + i)
+    print("score: " .. score, 1, 1)
+    print("lives: " .. lives, 1, 8)
+    spr(1, player_pos_x, player_pos_y)
+    for b in all(bullet_table) do
+      pset(b.x, b.y, 7)
     end
-    for b in all(bt) do
-        pset(b.x, b.y, 7)
+    for rs in all(monster_table) do
+      for m in all(rs.ms) do
+        spr(m.n, m.x, rs.y)
+      end
     end
-    for rs in all(mt) do
-        for m in all (rs.ms) do
-            spr(m.n, m.x, rs.y)
+  end
+end
+
+--------------------------------------------------------
+-------               INPUT                      -------
+--------------------------------------------------------
+
+function read_player_input()
+  if btn(0) then
+    move_player_left()
+  end
+
+  if btn(1) then
+    move_player_right()
+  end
+
+  if (btn(4) or btn(5)) and bullet_cooldown >= bullet_threshold then
+    shoot_bullet()
+    bullet_cooldown = 0
+  end
+end
+
+function move_player_left()
+  player_pos_x = player_pos_x - 1
+end
+
+function move_player_right()
+  player_pos_x = player_pos_x + 1
+end
+
+function shoot_bullet()
+  add(bullet_table, { x = player_pos_x + 4, y = player_pos_y })
+end
+
+function move_bullets()
+  for bullet in all(bullet_table) do
+    bullet.y = bullet.y - 1
+    if bullet.y < 0 then
+      del(bullet_table, bullet)
+    end
+  end
+end
+
+function move_monsters()
+  if monster_move_cooldown >= MONSTER_MOVE_COOLDOWN_THRESHOLD then
+    if monster_direction_cooldown < 30 then
+      for rs in all(monster_table) do
+        for m in all(rs.ms) do
+          m.x = m.x + 1
         end
+        rs.y = rs.y + 1
+      end
+    elseif monster_direction_cooldown >= 30 and monster_direction_cooldown < 60 then
+      for rs in all(monster_table) do
+        for m in all(rs.ms) do
+          m.x = m.x - 1
+        end
+        rs.y = rs.y + 1
+      end
     end
-  end 
+    monster_move_cooldown = 0
+  end
+end
+
+--------------------------------------------------------
+-------               COLLISSION                 -------
+--------------------------------------------------------
+
+function check_bullet_monster_collision()
+  for b in all(bullet_table) do
+    for row in all(monster_table) do
+      for monster in all(row.ms) do
+        if b.x > monster.x and b.x < monster.x + 8 and b.y > row.y and b.y < row.y + 8 then
+          del(row.ms, monster)
+          del(bullet_table, b)
+          score = score + 1
+        end
+      end
+    end
+  end
+end
+
+function check_monster_screen_collision()
+  for rs in all(monster_table) do
+    for m in all(rs.ms) do
+      if rs.y > 119 then
+        lives = lives - 1
+        del(rs.ms, m)
+      end
+    end
+  end
+end
+
+function reset_monster_move_timer()
+  if monster_direction_cooldown > 60 then
+    monster_direction_cooldown = 0
+  end
+end
+
+function procedurally_add_monsters()
+  if monster_table[#monster_table].y > 24 then
+    add(monster_table, { y = 8, ms = {} })
+    add(monster_table[#monster_table].ms, { x = 16, n = flr(rnd(3)) + 2 })
+    add(monster_table[#monster_table].ms, { x = 32, n = flr(rnd(3)) + 2 })
+    add(monster_table[#monster_table].ms, { x = 48, n = flr(rnd(3)) + 2 })
+    add(monster_table[#monster_table].ms, { x = 64, n = flr(rnd(3)) + 2 })
+    add(monster_table[#monster_table].ms, { x = 80, n = flr(rnd(3)) + 2 })
+    add(monster_table[#monster_table].ms, { x = 96, n = flr(rnd(3)) + 2 })
+    add(monster_table[#monster_table].ms, { x = 112, n = flr(rnd(3)) + 2 })
+  end
+end
+
+function check_gameover()
+  if game_over then
+    return
+  end
+end
+
+function check_lives()
+  if lives <= 0 then
+    game_over = true
+  end
+end
+
+function restart_game()
+  if btn(4) or btn(5) then
+    game_over = false
+    lives = 3
+    bullet_table = {}
+    monster_table = {}
+    add(monster_table, { y = 8, ms = {} })
+    add(monster_table[#monster_table].ms, { x = 16, n = 3 })
+    add(monster_table[#monster_table].ms, { x = 32, n = 2 })
+    add(monster_table[#monster_table].ms, { x = 48, n = 3 })
+    add(monster_table[#monster_table].ms, { x = 64, n = 3 })
+    add(monster_table[#monster_table].ms, { x = 80, n = 3 })
+    add(monster_table[#monster_table].ms, { x = 96, n = 2 })
+
+    score = 0
+    monster_move_cooldown = 0
+    mdir = 0
+    bullet_cooldown = 0
+  end
 end
 
 __gfx__
